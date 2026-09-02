@@ -1,16 +1,50 @@
-# React + Vite
+# Yitik Sozluk
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Yitik Sozluk, Turkce'nin unutulmaya yuz tutmus ve edebi kelimelerini kesfetmek icin tasarlanmis etkilesimli bir web deneyimidir. Kelimelerin uzerine gelerek sesli geri bildirim alabilir, bir kelimeyi sectiginizde anlamini goruntuleyebilirsiniz.
 
-Currently, two official plugins are available:
+## Ozellikler
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Etkilesimli kelime alani
+- Secilen kelimenin anlamini gosteren tanim paneli
+- Ilk kullanici etkilesiminden sonra baslayan ambiyans sesi
+- Kelime boyutuna gore degisen gezinme tonlari
+- Ses acma/kapatma denetimi
+- Giris animasyonu ve duyarlı arayuz
 
-## React Compiler
+## Teknolojiler
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- React 19
+- Vite 8
+- Tailwind CSS 4
+- Framer Motion
+- Tone.js
 
-## Expanding the Oxlint configuration
+## Kurulum
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+Bu proje Node.js 20.19+ veya 22.12+ gerektirir.
+
+```bash
+npm install
+npm run dev
+```
+
+Uygulama varsayilan olarak `http://localhost:5173` adresinde calisir.
+
+## Komutlar
+
+| Komut | Aciklama |
+| --- | --- |
+| `npm run dev` | Gelistirme sunucusunu baslatir. |
+| `npm run build` | Uretim derlemesini `dist/` klasorune olusturur. |
+| `npm run preview` | Uretim derlemesini yerelde onizler. |
+| `npm run lint` | Kod kalitesini Oxlint ile denetler. |
+
+## Proje Yapisi
+
+```text
+src/
+	audio/        Ses motoru
+	components/   Arayuz bilesenleri
+	data/         Kelime ve anlam verileri
+	App.jsx       Uygulama akisi
+```
