@@ -167,10 +167,13 @@ export default function WordField({ onSelect, onClear, phase }) {
   const sizeMin = isMobile ? 16 : 18
   const sizeMax = isMobile ? 56 : 68
 
-  const selectedWords = useMemo(() => pickRandomWords(count), [])
+  const selectedWords = useMemo(() => pickRandomWords(count), [count])
 
   const refs = useRef([])
   const state = useRef(null)
+  // Lazy ref initialization (React'in önerdiği desen): pahalı başlangıç
+  // hesaplamasını yalnızca ilk render'da bir kez yapıp ref'e gömüyoruz.
+  /* oxlint-disable react/refs */
   if (state.current === null) {
     const h = safeDim(typeof window !== 'undefined' ? window.innerHeight : 0, 800)
     const laneAssignment = assignLanesShuffled(selectedWords.length, LANE_COUNT)
@@ -183,6 +186,7 @@ export default function WordField({ onSelect, onClear, phase }) {
       sw.xPercent = computeXPercentForLane(sw.lane, sw.text, sw.size, sw.amplitude)
     })
   }
+  /* oxlint-enable react/refs */
 
   const [hoveredIndex, setHoveredIndex] = useState(null)
 
@@ -335,6 +339,12 @@ export default function WordField({ onSelect, onClear, phase }) {
 
   return (
     <div className="absolute inset-0" onClick={handleBackgroundClick}>
+      {/*
+        Ref'teki başlangıç değerlerini ilk JSX'i çizmek için okuyoruz;
+        sonrasında konum güncellemeleri rAF döngüsünde doğrudan DOM'a
+        yazılıyor (yeniden render tetiklenmiyor), bkz. yukarıdaki efekt.
+      */}
+      {/* oxlint-disable react/refs */}
       {selectedWords.map((_, i) => {
         const w = state.current[i]
         // Faz 1'de kelime tamamen görünmez ama düşme döngüsü arka planda
@@ -381,6 +391,7 @@ export default function WordField({ onSelect, onClear, phase }) {
           </div>
         )
       })}
+      {/* oxlint-enable react/refs */}
     </div>
   )
 }
