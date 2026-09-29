@@ -39,6 +39,10 @@ const PUSH_RADIUS = 0.26
 const MAX_PUSH = 0.1
 const PUSH_RESPONSE = 5 // itmenin hedefe yaklaşma hızı (1/s); küçük = daha yumuşak
 
+// prefers-reduced-motion açıkken: düşüş bu oranda yavaşlar; salınım,
+// eğilme ve imleç itmesi kapanır.
+const REDUCED_MOTION_SPEED = 0.2
+
 // Görünüm
 const EDGE_FADE_PX = 180
 const EDGE_BLUR = 2 // kenarda sönerken eklenen bulanıklık (px)
@@ -209,6 +213,8 @@ function createWordState(word, sizeMin, sizeMax, lane, initialY, isMobile) {
     // DOM'a en son yazılan değerler (-1 = bir sonraki karede mutlaka yaz)
     lastOpacity: -1,
     lastBlur: -1,
+    tabbable: null, // yalnızca ekrandaki kelimeler Tab sırasına girer
+
     depthOpacity: 0.35 + depth * 0.65,
     baseBlur: computeBaseBlur(size, isMobile),
     isItalic: Math.random() < 1 / 3,
@@ -329,6 +335,20 @@ function Field({ onSelect, onClear, phase, isMobile }) {
     }
   }, [])
 
+  // Hareket azaltma tercihi; işletim sistemi ayarı değişirse canlı güncellenir.
+  const reducedMotion = useRef(false)
+
+  useEffect(() => {
+    const mq = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+    if (!mq) return
+    const update = () => {
+      reducedMotion.current = mq.matches
+    }
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+
   useEffect(() => {
     let rafId
     let last = performance.now()
@@ -358,6 +378,7 @@ function Field({ onSelect, onClear, phase, isMobile }) {
       const vmin = Math.min(vw, vh)
       const pushRadiusPx = PUSH_RADIUS * vmin
       const pushEase = 1 - Math.exp(-PUSH_RESPONSE * dt)
+      const reduced = reducedMotion.current
       const all = state.current
 
       for (let i = 0; i < all.length; i++) {
@@ -375,7 +396,7 @@ function Field({ onSelect, onClear, phase, isMobile }) {
         w.swayPhase += TAU * w.swayFreq * dt
         const s = Math.sin(w.swayPhase)
         const c = Math.cos(w.swayPhase)
-        const lift = (1 - SWAY_LIFT * s * s) * liftNorm
+        const lift = reduced ? REDUCED_MOTION_SPEED : (1 - SWAY_LIFT * s * s) * liftNorm
         w.y += w.vFall * lift * dt
 
         if (w.y * vh > vh + 20) {
@@ -398,11 +419,18 @@ function Field({ onSelect, onClear, phase, isMobile }) {
           }
         }
 
-        const swayPx = w.swayAmp * vw * s
+        const swayPx = reduced ? 0 : w.swayAmp * vw * s
         // Eğilme yatay hıza bağlı: sola kayarken (cos < 0) sola yatar.
-        const rot = w.rotAmp * c
+        const rot = reduced ? 0 : w.rotAmp * c
         const leftPx = baseLeftPx(w, vw) + swayPx
         const topPx = w.y * vh
+
+        // Ekrana girip çıktıkça Tab sırasına ekle/çıkar (yalnızca değişince yaz).
+        const tabbable = topPx > -w.height && topPx < vh
+        if (el && tabbable !== w.tabbable) {
+          el.tabIndex = tabbable ? 0 : -1
+          w.tabbable = tabbable
+        }
 
         // İmleç itmesi: kelimenin merkezinden imlece uzaklığa göre yumuşak
         // bir kaçış hedefi; ofset bu hedefe üstel olarak yaklaşır (sıçramasız).
@@ -411,7 +439,7 @@ function Field({ onSelect, onClear, phase, isMobile }) {
         const dist = Math.hypot(mdx, mdy)
         let tx = 0
         let ty = 0
-        if (dist < pushRadiusPx && dist > 0.1) {
+        if (!reduced && dist < pushRadiusPx && dist > 0.1) {
           const depthFactor = 0.3 + w.depth * 0.7
           const force = (1 - dist / pushRadiusPx) * MAX_PUSH * depthFactor
           tx = (mdx / dist) * force
@@ -457,10 +485,13 @@ function Field({ onSelect, onClear, phase, isMobile }) {
   // Seçili kelimenin index'i ayrıca ref'te tutulur ki olay yöneticileri
   // (render'ı beklemeden) önceki seçimi her zaman güvenilir biçimde çözebilsin.
   const selectedRef = useRef(null)
+  // Klavye odağındaki kelime de (hover gibi) havada durur.
+  const focusedRef = useRef(null)
 
   const unfreeze = (i) => {
     const w = state.current[i]
     if (!w) return
+    if (focusedRef.current === i) return // odakta kaldıkça düşmeye başlamasın
     w.frozen = false
     // React hover sırasında filter'ı değiştirdi; önbelleği geçersiz kıl ki
     // döngü bir sonraki karede doğru değeri yazsın.
@@ -500,6 +531,40 @@ function Field({ onSelect, onClear, phase, isMobile }) {
     if (e.pointerType !== 'touch' && selectedRef.current === i) clear()
   }
 
+  // Klavye: Tab ile odaklanan kelime durur, Enter/Space seçer, Esc kapatır.
+  const handleFocus = (i) => {
+    if (!hoverEnabled) return
+    focusedRef.current = i
+    state.current[i].frozen = true
+  }
+
+  const handleBlur = (i) => {
+    if (focusedRef.current !== i) return
+    focusedRef.current = null
+    if (selectedRef.current === i) clear()
+    else unfreeze(i)
+  }
+
+  const handleKeyDown = (e, i) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      select(i)
+    }
+  }
+
+  // Esc, seçim nasıl yapılmış olursa olsun (fare, dokunma, klavye) paneli kapatır.
+  const clearRef = useRef(clear)
+  useEffect(() => {
+    clearRef.current = clear
+  })
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') clearRef.current()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   return (
     <div className="absolute inset-0" onClick={clear}>
       {/*
@@ -521,7 +586,9 @@ function Field({ onSelect, onClear, phase, isMobile }) {
           <div
             key={i}
             ref={(el) => (refs.current[i] = el)}
-            className="absolute top-0 left-0 cursor-pointer select-none whitespace-nowrap"
+            role="button"
+            aria-pressed={hoveredIndex === i}
+            className="absolute top-0 left-0 cursor-pointer select-none whitespace-nowrap outline-none focus-visible:outline-1 focus-visible:outline-accent focus-visible:outline-offset-8"
             style={{
               transform: `translate3d(${baseLeftPx(w, vw)}px, ${w.y * vh}px, 0) rotate(0deg)`,
               willChange: 'transform',
@@ -531,6 +598,12 @@ function Field({ onSelect, onClear, phase, isMobile }) {
             }}
             onPointerEnter={(e) => handlePointerEnter(e, i)}
             onPointerLeave={(e) => handlePointerLeave(e, i)}
+            // Fare/dokunma tıklaması odak vermesin: odak yalnızca klavyeyle
+            // gelsin, yoksa imleç ayrıldığında kelime odakta asılı kalır.
+            onMouseDown={(e) => e.preventDefault()}
+            onFocus={() => handleFocus(i)}
+            onBlur={() => handleBlur(i)}
+            onKeyDown={(e) => handleKeyDown(e, i)}
             onClick={(e) => {
               e.stopPropagation()
               select(i)

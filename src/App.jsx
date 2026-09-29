@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { MotionConfig } from 'framer-motion'
 import WordField from './components/WordField'
 import DefinitionPanel from './components/DefinitionPanel'
 import Chrome from './components/Chrome'
@@ -26,7 +27,7 @@ function storeMuted(muted) {
 }
 
 export default function App() {
-  const [selected, setSelected] = useState(null) // { text, meaning } | null
+  const [selected, setSelected] = useState(null) // { text, meaning, origin, category } | null
   const [touched, setTouched] = useState(false)
   const [phase, setPhase] = useState('intro') // 'intro' -> 'reveal' -> 'live'
   const [muted, setMutedState] = useState(readStoredMuted)
@@ -74,21 +75,25 @@ export default function App() {
   let soundLabel = 'SESİ AÇ'
   if (audioStarted) soundLabel = muted ? 'SES KAPALI' : 'SES AÇIK'
 
+  // reducedMotion="user": işletim sisteminde hareket azaltma açıksa framer-motion
+  // konum/ölçek animasyonlarını atlar, yalnızca opaklık geçişlerini korur.
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-bg">
-      <WordField
-        phase={phase}
-        onSelect={(w) => { setSelected(w); setTouched(true) }}
-        onClear={() => setSelected(null)}
-      />
-      <Chrome
-        hideHint={touched}
-        phase={phase}
-        soundLabel={soundLabel}
-        onSoundButton={handleSoundButton}
-      />
-      <DefinitionPanel word={selected} />
-      <IntroTitle phase={phase} />
-    </div>
+    <MotionConfig reducedMotion="user">
+      <div className="relative w-screen h-screen overflow-hidden bg-bg">
+        <WordField
+          phase={phase}
+          onSelect={(w) => { setSelected(w); setTouched(true) }}
+          onClear={() => setSelected(null)}
+        />
+        <Chrome
+          hideHint={touched}
+          phase={phase}
+          soundLabel={soundLabel}
+          onSoundButton={handleSoundButton}
+        />
+        <DefinitionPanel word={selected} />
+        <IntroTitle phase={phase} />
+      </div>
+    </MotionConfig>
   )
 }
