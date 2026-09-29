@@ -14,12 +14,17 @@ export default function DefinitionPanel({ word }) {
           exit={{ opacity: 0, y: 30 }}
           transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
         >
-          <p
-            className="text-xs tracking-[0.25em] text-ui uppercase mb-3"
+          <div
+            className="flex items-center gap-3 mb-3 text-xs tracking-[0.25em] text-ui uppercase"
             style={{ fontFamily: '"JetBrains Mono", monospace' }}
           >
-            Anlamı
-          </p>
+            <span>Anlamı</span>
+            {word.origin && (
+              <span className="border border-ui/60 px-2 py-0.5 text-[0.65rem] tracking-[0.2em]">
+                {word.origin}
+              </span>
+            )}
+          </div>
           <h2 className="text-3xl md:text-5xl text-accent mb-2">{word.text}</h2>
           <p className="text-base md:text-xl text-word/80 leading-relaxed">
             {word.meaning}

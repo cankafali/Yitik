@@ -80,6 +80,13 @@ function readIsMobile() {
   return readViewport().vw < MOBILE_BREAKPOINT
 }
 
+// Alttan çıkan kelimenin yerine, o anda ekranda olmayan rastgele bir kelime seçer.
+function pickReplacementWord(all) {
+  const onScreen = new Set(all.map((w) => w.text))
+  const pool = words.filter((entry) => !onScreen.has(entry.text))
+  return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null
+}
+
 function pickRandomWords(count) {
   const pool = [...words]
   const picked = []
@@ -178,7 +185,7 @@ function createWordState(word, sizeMin, sizeMax, lane, initialY, isMobile) {
 
   return {
     text: word.text,
-    meaning: word.meaning,
+    entry: word, // { text, meaning, origin, category } — seçimde panele gider
     size,
     depth,
     lane,
@@ -329,6 +336,20 @@ function Field({ onSelect, onClear, phase, isMobile }) {
     // (sin² ortalaması 1/2).
     const liftNorm = 1 / (1 - SWAY_LIFT / 2)
 
+    // Metni değişen kelimelerin genişliği döngü içinde ölçülmez; bir sonraki
+    // karenin başında (bu döngünün yazımlarından önce) tek seferde ölçülür.
+    let pendingMeasure = []
+    const measurePending = () => {
+      pendingMeasure.forEach((i) => {
+        const el = refs.current[i]
+        if (el && state.current[i]) {
+          state.current[i].width = el.offsetWidth
+          state.current[i].height = el.offsetHeight
+        }
+      })
+      pendingMeasure = []
+    }
+
     const loop = (now) => {
       const dt = Math.min((now - last) / 1000, MAX_DT)
       last = now
@@ -362,6 +383,19 @@ function Field({ onSelect, onClear, phase, isMobile }) {
           w.x = laneToX(w.lane)
           w.y = -(w.height + 40) / vh
           w.vFall = w.terminal * ENTRY_SPEED
+
+          // Aynı kelime geri dönmesin: havuzdan ekranda olmayan yeni bir
+          // kelimeyle yeniden doğ. Metin DOM'a doğrudan yazılır (re-render
+          // yok); React bir sonraki render'da aynı metni state'ten okur.
+          const next = pickReplacementWord(all)
+          if (next) {
+            w.text = next.text
+            w.entry = next
+            const inner = el && el.firstChild
+            if (inner) inner.textContent = next.text
+            if (pendingMeasure.length === 0) requestAnimationFrame(measurePending)
+            pendingMeasure.push(i)
+          }
         }
 
         const swayPx = w.swayAmp * vw * s
@@ -444,7 +478,7 @@ function Field({ onSelect, onClear, phase, isMobile }) {
     selectedRef.current = i
     setHoveredIndex(i)
     playHoverTone(w.depth)
-    onSelect({ text: w.text, meaning: w.meaning })
+    onSelect(w.entry)
   }
 
   const clear = () => {
