@@ -5,11 +5,32 @@ import Chrome from './components/Chrome'
 import IntroTitle from './components/IntroTitle'
 import { ensureAudioStarted, setMuted } from './audio/soundEngine'
 
+const MUTE_STORAGE_KEY = 'yitik:muted'
+
+// Depolama gizli pencerede ya da engellenmiş site verisinde hata atabilir;
+// o durumda tercih yalnızca bu oturum için geçerli olur.
+function readStoredMuted() {
+  try {
+    return localStorage.getItem(MUTE_STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function storeMuted(muted) {
+  try {
+    localStorage.setItem(MUTE_STORAGE_KEY, muted ? '1' : '0')
+  } catch {
+    // depolama kullanılamıyor — sessizce geç
+  }
+}
+
 export default function App() {
   const [selected, setSelected] = useState(null) // { text, meaning } | null
   const [touched, setTouched] = useState(false)
   const [phase, setPhase] = useState('intro') // 'intro' -> 'reveal' -> 'live'
-  const [muted, setMutedState] = useState(false) // ses varsayılan AÇIK
+  const [muted, setMutedState] = useState(readStoredMuted)
+  const [audioStarted, setAudioStarted] = useState(false)
 
   useEffect(() => {
     const toReveal = setTimeout(() => setPhase('reveal'), 1400)
@@ -21,23 +42,37 @@ export default function App() {
   }, [])
 
   // Ses bağlamı ancak bir kullanıcı hareketinden sonra başlatılabilir.
-  // İlk tıklama/dokunmada bir kez çağrılır, sonra kendini kaldırır.
+  // Kullanıcı sesi daha önce kapatmadıysa ilk tıklama/dokunmada bir kez
+  // başlatılır; kapattıysa ses butonuna basılana kadar hiç başlatılmaz.
   useEffect(() => {
+    if (muted || audioStarted) return
     const onFirstInteraction = () => {
-      ensureAudioStarted()
       window.removeEventListener('pointerdown', onFirstInteraction)
+      ensureAudioStarted().then(() => setAudioStarted(true))
     }
     window.addEventListener('pointerdown', onFirstInteraction)
     return () => window.removeEventListener('pointerdown', onFirstInteraction)
-  }, [])
+  }, [muted, audioStarted])
 
-  const handleToggleMute = () => {
-    setMutedState((prev) => {
-      const next = !prev
-      setMuted(next)
-      return next
-    })
+  const handleSoundButton = () => {
+    if (!audioStarted) {
+      // "SESİ AÇ": bağlamı başlat ve (önceden kapatılmış olsa bile) sesi aç.
+      setMutedState(false)
+      storeMuted(false)
+      ensureAudioStarted().then(() => {
+        setMuted(false)
+        setAudioStarted(true)
+      })
+      return
+    }
+    const next = !muted
+    setMutedState(next)
+    setMuted(next)
+    storeMuted(next)
   }
+
+  let soundLabel = 'SESİ AÇ'
+  if (audioStarted) soundLabel = muted ? 'SES KAPALI' : 'SES AÇIK'
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-bg">
@@ -49,8 +84,8 @@ export default function App() {
       <Chrome
         hideHint={touched}
         phase={phase}
-        muted={muted}
-        onToggleMute={handleToggleMute}
+        soundLabel={soundLabel}
+        onSoundButton={handleSoundButton}
       />
       <DefinitionPanel word={selected} />
       <IntroTitle phase={phase} />

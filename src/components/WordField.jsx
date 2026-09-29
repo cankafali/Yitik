@@ -41,8 +41,13 @@ const PUSH_RESPONSE = 5 // itmenin hedefe yaklaşma hızı (1/s); küçük = dah
 
 // Görünüm
 const EDGE_FADE_PX = 180
+const EDGE_BLUR = 2 // kenarda sönerken eklenen bulanıklık (px)
 const BLUR_THRESHOLD = 34 // bu boyutun altındaki kelimeler hafif bulanık (px)
 const MAX_BLUR = 1.8
+// Stil yazımı eşikleri: değer bundan az değiştiyse DOM'a yazılmaz. Özellikle
+// `filter` her yazımda yeniden rasterize tetiklediği için pahalı.
+const BLUR_EPSILON = 0.05
+const OPACITY_EPSILON = 0.01
 const MAX_DT = 0.05 // sekme arka plandan dönünce zaman sıçramasını kırp (s)
 
 const TAU = Math.PI * 2
@@ -194,6 +199,9 @@ function createWordState(word, sizeMin, sizeMax, lane, initialY, isMobile) {
     pushX: 0, // vmin cinsinden
     pushY: 0,
     frozen: false,
+    // DOM'a en son yazılan değerler (-1 = bir sonraki karede mutlaka yaz)
+    lastOpacity: -1,
+    lastBlur: -1,
     depthOpacity: 0.35 + depth * 0.65,
     baseBlur: computeBaseBlur(size, isMobile),
     isItalic: Math.random() < 1 / 3,
@@ -290,24 +298,27 @@ function Field({ onSelect, onClear, phase, isMobile }) {
     }
   }, [])
 
-  // Mouse konumu React state'te değil bir ref'te tutulur: her mousemove'da
-  // re-render tetiklemek performansı bozar.
+  // İmleç konumu React state'te değil bir ref'te tutulur: her pointermove'da
+  // re-render tetiklemek performansı bozar. Dokunmatik girişler itmeye
+  // katılmaz — aksi halde son dokunulan nokta kelimeleri kalıcı olarak iter.
   const mouse = useRef({ x: -9999, y: -9999 })
 
   useEffect(() => {
     const onMove = (e) => {
+      if (e.pointerType === 'touch') return
       mouse.current.x = e.clientX
       mouse.current.y = e.clientY
     }
-    const onLeave = () => {
+    const onOut = (e) => {
+      if (e.relatedTarget) return // pencere içinde başka bir öğeye geçiş
       mouse.current.x = -9999
       mouse.current.y = -9999
     }
-    window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseleave', onLeave)
+    window.addEventListener('pointermove', onMove)
+    document.addEventListener('pointerout', onOut)
     return () => {
-      window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseleave', onLeave)
+      window.removeEventListener('pointermove', onMove)
+      document.removeEventListener('pointerout', onOut)
     }
   }, [])
 
@@ -379,10 +390,21 @@ function Field({ onSelect, onClear, phase, isMobile }) {
           el.style.transform = `translate3d(${leftPx + w.pushX * vmin}px, ${topPx + w.pushY * vmin}px, 0) rotate(${rot}deg)`
 
           const fade = edgeFade(topPx, vh, w.height)
+          const settled = fade === 1 || fade === 0 // uç değerler her zaman tam yazılır
           const inner = el.firstChild
           if (inner) {
-            inner.style.opacity = (w.depthOpacity * fade).toFixed(3)
-            inner.style.filter = `blur(${(w.baseBlur + (1 - fade) * 2).toFixed(2)}px)`
+            const opacity = w.depthOpacity * fade
+            const dOpacity = Math.abs(opacity - w.lastOpacity)
+            if (dOpacity > OPACITY_EPSILON || (settled && dOpacity > 0)) {
+              inner.style.opacity = opacity.toFixed(3)
+              w.lastOpacity = opacity
+            }
+            const blur = w.baseBlur + (1 - fade) * EDGE_BLUR
+            const dBlur = Math.abs(blur - w.lastBlur)
+            if (dBlur > BLUR_EPSILON || (settled && dBlur > 0)) {
+              inner.style.filter = `blur(${blur.toFixed(2)}px)`
+              w.lastBlur = blur
+            }
           }
         }
       }
@@ -398,33 +420,54 @@ function Field({ onSelect, onClear, phase, isMobile }) {
   // aksi halde kelimeler daha belirmeden dondurulup seçilebilir, açılışı bozar.
   const hoverEnabled = phase === 'live'
 
-  const handleEnter = (i) => {
+  // Seçili kelimenin index'i ayrıca ref'te tutulur ki olay yöneticileri
+  // (render'ı beklemeden) önceki seçimi her zaman güvenilir biçimde çözebilsin.
+  const selectedRef = useRef(null)
+
+  const unfreeze = (i) => {
+    const w = state.current[i]
+    if (!w) return
+    w.frozen = false
+    // React hover sırasında filter'ı değiştirdi; önbelleği geçersiz kıl ki
+    // döngü bir sonraki karede doğru değeri yazsın.
+    w.lastBlur = -1
+    w.lastOpacity = -1
+  }
+
+  const select = (i) => {
     if (!hoverEnabled) return
+    const prev = selectedRef.current
+    if (prev === i) return
+    if (prev !== null) unfreeze(prev) // bir kelimeden diğerine geçerken önceki havada kalmasın
     const w = state.current[i]
     w.frozen = true
+    selectedRef.current = i
     setHoveredIndex(i)
-    playHoverTone(w.size)
+    playHoverTone(w.depth)
     onSelect({ text: w.text, meaning: w.meaning })
   }
 
-  const handleLeave = () => {
-    setHoveredIndex((prev) => {
-      if (prev !== null && state.current[prev]) {
-        state.current[prev].frozen = false
-      }
-      return null
-    })
+  const clear = () => {
+    const prev = selectedRef.current
+    if (prev === null) return
+    unfreeze(prev)
+    selectedRef.current = null
+    setHoveredIndex(null)
     onClear()
   }
 
-  const handleBackgroundClick = () => {
-    if (hoveredIndex !== null) {
-      handleLeave()
-    }
+  // Masaüstü (fare/kalem): üzerine gelince seç, ayrılınca kapat.
+  // Dokunmatik: dokun-seç, başka kelimeye dokun-değiştir, boş alana dokun-kapat.
+  const handlePointerEnter = (e, i) => {
+    if (e.pointerType !== 'touch') select(i)
+  }
+
+  const handlePointerLeave = (e, i) => {
+    if (e.pointerType !== 'touch' && selectedRef.current === i) clear()
   }
 
   return (
-    <div className="absolute inset-0" onClick={handleBackgroundClick}>
+    <div className="absolute inset-0" onClick={clear}>
       {/*
         Ref'teki başlangıç değerlerini ilk JSX'i çizmek için okuyoruz;
         sonrasında konum güncellemeleri rAF döngüsünde doğrudan DOM'a
@@ -452,11 +495,11 @@ function Field({ onSelect, onClear, phase, isMobile }) {
               transitionDelay: phase === 'reveal' ? `${i * 0.025}s` : '0s',
               transition: phase === 'reveal' ? 'opacity 0.8s ease' : 'opacity 0.4s ease',
             }}
-            onMouseEnter={() => handleEnter(i)}
-            onMouseLeave={handleLeave}
+            onPointerEnter={(e) => handlePointerEnter(e, i)}
+            onPointerLeave={(e) => handlePointerLeave(e, i)}
             onClick={(e) => {
               e.stopPropagation()
-              handleEnter(i)
+              select(i)
             }}
           >
             <span

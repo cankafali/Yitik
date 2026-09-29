@@ -4,7 +4,7 @@ const UI_FONT = '"JetBrains Mono", monospace'
 
 // Sol üstteki site adı artık IntroTitle.jsx tarafından yönetiliyor — açılış
 // animasyonunun tek elemanı, faz 2 sonunda bu köşeye yerleşiyor.
-export default function Chrome({ hideHint, phase, muted, onToggleMute }) {
+export default function Chrome({ hideHint, phase, soundLabel, onSoundButton }) {
   const labelClass = 'text-xs tracking-[0.25em] uppercase text-ui'
 
   return (
@@ -19,7 +19,7 @@ export default function Chrome({ hideHint, phase, muted, onToggleMute }) {
         DÜŞMEKTE OLAN KELİMELER
       </motion.div>
       <div
-        className={`fixed bottom-10 left-[6vw] z-40 pointer-events-none ${labelClass}`}
+        className={`fixed bottom-6 md:bottom-10 left-[6vw] z-40 pointer-events-none ${labelClass}`}
         style={{
           fontFamily: UI_FONT,
           opacity: phase === 'live' && !hideHint ? 1 : 0,
@@ -28,14 +28,19 @@ export default function Chrome({ hideHint, phase, muted, onToggleMute }) {
       >
         BİR KELİMEYE DOKUN
       </div>
-      {/* Diğer Chrome öğelerinin aksine tıklanabilir olması gerekiyor. */}
+      {/*
+        Diğer Chrome öğelerinin aksine tıklanabilir olması gerekiyor.
+        pointerdown'ı durduruyoruz ki App'teki "ilk etkileşimde sesi başlat"
+        dinleyicisi bu butonun kendi davranışıyla yarışmasın.
+      */}
       <button
         type="button"
-        onClick={onToggleMute}
-        className={`fixed bottom-20 md:bottom-10 right-[6vw] z-40 pointer-events-auto bg-transparent border-none cursor-pointer ${labelClass}`}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={onSoundButton}
+        className={`fixed bottom-6 md:bottom-10 right-[6vw] z-40 pointer-events-auto bg-transparent border-none cursor-pointer ${labelClass}`}
         style={{ fontFamily: UI_FONT }}
       >
-        {muted ? 'SES KAPALI' : 'SES AÇIK'}
+        {soundLabel}
       </button>
     </>
   )

@@ -6,7 +6,9 @@ export default function DefinitionPanel({ word }) {
       {word && (
         <motion.div
           key={word.text}
-          className="fixed bottom-[8vh] left-[6vw] z-50 max-w-xl pointer-events-none"
+          // Mobilde alt köşelerdeki ipucu/ses butonunun üstünde, iki kenar
+          // arasında durur; masaüstünde sol altta, genişliği sınırlı.
+          className="fixed bottom-16 left-[6vw] right-[6vw] md:bottom-[8vh] md:right-auto md:max-w-xl z-50 pointer-events-none"
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 30 }}
