@@ -54,6 +54,12 @@ const BLUR_EPSILON = 0.05
 const OPACITY_EPSILON = 0.01
 const MAX_DT = 0.05 // sekme arka plandan dönünce zaman sıçramasını kırp (s)
 
+// Tipografi
+const WEIGHT_MIN = 400 // en uzak kelimenin font ağırlığı
+const WEIGHT_MAX = 850 // en yakın kelimenin font ağırlığı
+const WEIGHT_JITTER = 50 // ± rastgele sapma
+const ITALIC_RATIO = 0.12 // italik yazılan kelimelerin oranı
+
 const TAU = Math.PI * 2
 
 function rand(min, max) {
@@ -217,8 +223,16 @@ function createWordState(word, sizeMin, sizeMax, lane, initialY, isMobile) {
 
     depthOpacity: 0.35 + depth * 0.65,
     baseBlur: computeBaseBlur(size, isMobile),
-    isItalic: Math.random() < 1 / 3,
-    fontWeight: Math.round(rand(400, 900)),
+    isItalic: Math.random() < ITALIC_RATIO,
+    // Ağırlık derinliği izler: uzak (küçük) kelimeler ince, yakın (büyük)
+    // kelimeler kalın; küçük bir sapma tekdüzeliği kırar.
+    fontWeight: Math.round(
+      clamp(
+        WEIGHT_MIN + depth * (WEIGHT_MAX - WEIGHT_MIN) + rand(-WEIGHT_JITTER, WEIGHT_JITTER),
+        WEIGHT_MIN,
+        WEIGHT_MAX
+      )
+    ),
   }
 }
 

@@ -17,10 +17,7 @@ export default function DefinitionPanel({ word }) {
             exit={{ opacity: 0, y: 30 }}
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
           >
-            <div
-              className="flex items-center gap-3 mb-3 text-xs tracking-[0.25em] text-ui uppercase"
-              style={{ fontFamily: '"JetBrains Mono", monospace' }}
-            >
+            <div className="flex items-center gap-3 mb-3 font-mono text-xs tracking-[0.25em] text-ui uppercase">
               <span>Anlamı</span>
               {word.origin && (
                 <span className="border border-ui/60 px-2 py-0.5 text-[0.65rem] tracking-[0.2em]">
