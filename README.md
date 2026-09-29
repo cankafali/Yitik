@@ -1,15 +1,20 @@
-# Yitik Sozluk
+<!-- DEMO_LINK -->
 
-Yitik Sozluk, Turkce'nin unutulmaya yuz tutmus ve edebi kelimelerini kesfetmek icin tasarlanmis etkilesimli bir web deneyimidir. Kelimelerin uzerine gelerek sesli geri bildirim alabilir, bir kelimeyi sectiginizde anlamini goruntuleyebilirsiniz.
+<!-- DEMO_GIF -->
 
-## Ozellikler
+# Yitik Sözlük
 
-- Etkilesimli kelime alani
-- Secilen kelimenin anlamini gosteren tanim paneli
-- Ilk kullanici etkilesiminden sonra baslayan ambiyans sesi
-- Kelime boyutuna gore degisen gezinme tonlari
-- Ses acma/kapatma denetimi
-- Giris animasyonu ve duyarlı arayuz
+Yitik Sözlük, Türkçenin unutulmaya yüz tutmuş, edebî kelimelerini keşfetmek için tasarlanmış etkileşimli bir web deneyimidir. Kelimeler ekranda kâğıt ya da yaprak gibi süzülerek düşer; bir kelimenin üzerine geldiğinizde (dokunmatik ekranda dokunduğunuzda) havada durur, anlamı ve kökeni belirir, boyutuna göre bir nota çalar.
+
+## Özellikler
+
+- **Havada süzülen kelimeler:** Her kelime yerçekimi ve hava direnciyle kendi terminal hızına ulaşır. Büyük (yakın) kelimeler daha hızlı, küçük (uzak) kelimeler daha yavaş düşer. Yaprak gibi sağa sola salınırken dönüş noktalarında yavaşlar, kaydığı yöne doğru eğilir.
+- **Zoom ve resize'a dayanıklı yerleşim:** Konum ve hızlar ekran boyutuna göre oranlıdır. Tarayıcı yakınlaştırıldığında ya da pencere boyutu değiştiğinde kelimeler şeritlerinde kalır. Telefon yan çevrildiğinde alan kısa bir geçişle yeniden kurulur.
+- **272 kelimelik sözlük:** Her kelimenin anlamı, kökeni (Arapça, Farsça, Eski Türkçe…) ve kategorisi (ayrılık, sevgi, hüzün, sevinç, düşünce, karakter, zaman, doğa, söz) vardır. Tanım panelinde köken küçük bir etiket olarak görünür.
+- **Sürekli yenilenen alan:** Alttan çıkan kelime, o anda ekranda olmayan yeni bir kelimeyle yukarıdan yeniden doğar.
+- **İmleç etkileşimi:** İmleç yaklaştıkça kelimeler yumuşakça kenara çekilir.
+- **Ses:** İlk etkileşimden sonra başlayan kısık bir ambiyans ve kelimenin derinliğine göre perdesi değişen pentatonik tonlar. Ses tercihi tarayıcıda saklanır.
+- **Klavye ve erişilebilirlik:** Tab ile ekrandaki kelimeler arasında gezinilir. Odaklanan kelime durur, Enter/Space seçer, Esc kapatır. Tanım paneli ekran okuyuculara duyurulur. İşletim sisteminde "hareketi azalt" açıksa düşüş yavaşlar, salınım ve eğilme kapanır.
 
 ## Teknolojiler
 
@@ -28,23 +33,48 @@ npm install
 npm run dev
 ```
 
-Uygulama varsayilan olarak `http://localhost:5173` adresinde calisir.
+Uygulama varsayılan olarak `http://localhost:5173` adresinde çalışır.
 
 ## Komutlar
 
-| Komut | Aciklama |
+| Komut | Açıklama |
 | --- | --- |
-| `npm run dev` | Gelistirme sunucusunu baslatir. |
-| `npm run build` | Uretim derlemesini `dist/` klasorune olusturur. |
-| `npm run preview` | Uretim derlemesini yerelde onizler. |
+| `npm run dev` | Geliştirme sunucusunu başlatır. |
+| `npm run build` | Üretim derlemesini `dist/` klasörüne oluşturur. |
+| `npm run preview` | Üretim derlemesini yerelde önizler. |
 | `npm run lint` | Kod kalitesini Oxlint ile denetler. |
 
-## Proje Yapisi
+## İnce ayar
+
+Düşüş fiziğinin bütün ayarları `src/components/WordField.jsx` dosyasının başında, isimli sabitler olarak durur:
+
+| Sabit | Etkisi |
+| --- | --- |
+| `DRAG` | Hava direnci; büyüdükçe kelimeler terminal hıza daha çabuk oturur. |
+| `TERMINAL_MIN` / `TERMINAL_MAX` | En küçük ve en büyük kelimenin terminal hızı (ekran yüksekliği / saniye). |
+| `ENTRY_SPEED` | Üstten girişteki başlangıç hızı (terminal hızın oranı). |
+| `SWAY_AMP_*`, `SWAY_FREQ_*` | Yaprak salınımının genliği ve frekansı. |
+| `SWAY_LIFT` | Salınımın dönüş noktalarında dikey hızın ne kadar düşeceği. |
+| `ROT_AMP_*` | Yatay harekete bağlı eğilme açısı. |
+| `PUSH_RADIUS`, `MAX_PUSH`, `PUSH_RESPONSE` | İmleç itmesinin menzili, gücü ve yumuşaklığı. |
+| `REDUCED_MOTION_SPEED` | Hareket azaltma açıkken düşüş hızı çarpanı. |
+
+## Kelime verisi
+
+Kelimeler `src/data/words.js` içindedir:
+
+```js
+{ text: "hicran", meaning: "Ayrılık acısı, içe işleyen ayrılık duygusu.", origin: "Arapça", category: "ayrılık" }
+```
+
+`category`, aynı dosyadaki `CATEGORIES` kümesinden biri olmalıdır. Kökeninden emin olunmayan kelimelerde `origin` boş bırakılır.
+
+## Proje yapısı
 
 ```text
 src/
-	audio/        Ses motoru
-	components/   Arayuz bilesenleri
-	data/         Kelime ve anlam verileri
-	App.jsx       Uygulama akisi
+  audio/        Ses motoru (Tone.js)
+  components/   Arayüz bileşenleri (kelime alanı, tanım paneli, açılış başlığı)
+  data/         Kelime, anlam, köken ve kategori verileri
+  App.jsx       Uygulama akışı, ses tercihi
 ```
