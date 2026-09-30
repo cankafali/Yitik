@@ -47,15 +47,17 @@ export function ensureAudioStarted() {
   return startingPromise
 }
 
-// Perde kelimenin boyutuna bağlı: size 68 → index 0 (kalın), size 18 → index 10 (ince).
-export function playHoverTone(size) {
+// Perde kelimenin derinliğine bağlı (0 = en küçük/uzak, 1 = en büyük/yakın):
+// derinlik 1 → index 0 (kalın), derinlik 0 → son index (ince). Derinlik boyut
+// aralığına göre normalize olduğu için mobil ve masaüstünde aynı şekilde çalışır.
+export function playHoverTone(depth) {
   if (!started || !hoverSynth) return
 
   const now = performance.now()
   if (now - lastHoverAt < HOVER_DEBOUNCE_MS) return
   lastHoverAt = now
 
-  const raw = Math.round((1 - (size - 18) / 50) * (PENTATONIC.length - 1))
+  const raw = Math.round((1 - depth) * (PENTATONIC.length - 1))
   const idx = Math.min(PENTATONIC.length - 1, Math.max(0, raw))
   hoverSynth.triggerAttackRelease(PENTATONIC[idx], '8n')
 }

@@ -1,50 +1,49 @@
-# Yitik Sozluk
+<!-- DEMO_LINK -->
 
-Yitik Sozluk, Turkce'nin unutulmaya yuz tutmus ve edebi kelimelerini kesfetmek icin tasarlanmis etkilesimli bir web deneyimidir. Kelimelerin uzerine gelerek sesli geri bildirim alabilir, bir kelimeyi sectiginizde anlamini goruntuleyebilirsiniz.
+<!-- DEMO_GIF -->
 
-## Ozellikler
+# Yitik Sözlük
 
-- Etkilesimli kelime alani
-- Secilen kelimenin anlamini gosteren tanim paneli
-- Ilk kullanici etkilesiminden sonra baslayan ambiyans sesi
-- Kelime boyutuna gore degisen gezinme tonlari
-- Ses acma/kapatma denetimi
-- Giris animasyonu ve duyarlı arayuz
+Türkçenin unutulmaya yüz tutmuş, edebî kelimeleri ekranda yaprak gibi süzülerek düşer. Bir kelimenin üzerine gelin ya da dokunun: havada durur, anlamı ve kökeni belirir, boyutuna göre bir nota çalar.
+
+## Özellikler
+
+- **Yaprak gibi düşüş:** Kelimeler yavaş başlayıp hızlanır, sağa sola salınarak iner. Büyük (yakın) kelimeler hızlı, küçükler süzülerek düşer.
+- **272 kelime:** Her birinin anlamı, kökeni (Arapça, Farsça, Eski Türkçe…) ve kategorisi var. Ekrandan çıkan kelimenin yerine her seferinde yeni bir kelime gelir.
+- **Her ekranda aynı düzen:** Yakınlaştırma, pencere boyutu ve telefonun yan çevrilmesi yerleşimi bozmaz.
+- **Ses:** Kısık bir ambiyans ve kelimenin derinliğine göre değişen notalar. Ses tercihi hatırlanır.
+- **Erişilebilir:** Klavyeyle gezinme (Tab, Enter, Esc), ekran okuyucu desteği ve "hareketi azalt" ayarına uyum.
 
 ## Teknolojiler
 
-- React 19
-- Vite 8
-- Tailwind CSS 4
-- Framer Motion
-- Tone.js
+React 19 · Vite 8 · Tailwind CSS 4 · Framer Motion · Tone.js
 
 ## Kurulum
 
-Bu proje Node.js 20.19+ veya 22.12+ gerektirir.
+Node.js 20.19+ veya 22.12+ gerekir.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Uygulama varsayilan olarak `http://localhost:5173` adresinde calisir.
+Uygulama `http://localhost:5173` adresinde açılır.
 
-## Komutlar
-
-| Komut | Aciklama |
+| Komut | Açıklama |
 | --- | --- |
-| `npm run dev` | Gelistirme sunucusunu baslatir. |
-| `npm run build` | Uretim derlemesini `dist/` klasorune olusturur. |
-| `npm run preview` | Uretim derlemesini yerelde onizler. |
-| `npm run lint` | Kod kalitesini Oxlint ile denetler. |
+| `npm run dev` | Geliştirme sunucusu |
+| `npm run build` | Üretim derlemesi (`dist/`) |
+| `npm run preview` | Derlemeyi yerelde önizleme |
+| `npm run lint` | Oxlint ile kod denetimi |
 
-## Proje Yapisi
+## Proje yapısı
 
 ```text
 src/
-	audio/        Ses motoru
-	components/   Arayuz bilesenleri
-	data/         Kelime ve anlam verileri
-	App.jsx       Uygulama akisi
+  audio/        Ses motoru
+  components/   Kelime alanı, tanım paneli, açılış başlığı
+  data/         Kelimeler (anlam, köken, kategori)
+  App.jsx       Uygulama akışı
 ```
+
+Düşüş fiziğinin ayarları (yerçekimi, hava direnci, salınım vb.) `src/components/WordField.jsx` dosyasının başında isimli sabitler olarak durur. Yeni kelime eklemek için `src/data/words.js` dosyasına aynı biçimde bir satır eklemek yeterli.

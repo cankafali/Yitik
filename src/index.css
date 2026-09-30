@@ -5,6 +5,7 @@
   --color-word: #E8E4DC;
   --color-accent: #C4462F;
   --color-ui: #55504A;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
 }
 
 html, body, #root {
