@@ -1,23 +1,34 @@
-# Dependencies and build output
+# Bağımlılıklar ve derleme çıktısı
 node_modules/
 dist/
 dist-ssr/
+coverage/
+.vite/
 
-# Environment and logs
-*.local
+# Ortam değişkenleri (örnek dosya hariç)
 .env
 .env.*
+*.local
 !.env.example
+
+# Loglar
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Local editor and OS files
+# Deploy
+.vercel
+
+# Editör ve işletim sistemi dosyaları
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
+desktop.ini
 
-.vercel
-.env*
+# Yerel araç çıktıları
+.claude/launch.json
+.claude/settings.local.json
+.playwright-mcp/
