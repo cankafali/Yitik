@@ -1,4 +1,8 @@
-import * as Tone from 'tone'
+// Tone.js büyük bir kütüphane (paketin yarısından fazlası); açılışta değil,
+// kullanıcı sesi ilk kez başlattığında ayrı bir parça olarak yüklenir. Bu hem
+// ilk yüklemeyi hızlandırır hem de Tone'un import anında bağlam oluşturup
+// tarayıcıya "AudioContext was not allowed to start" uyarısı verdirmesini önler.
+let Tone = null
 
 // Büyük kelime = kalın nota, küçük kelime = ince nota. Hangi sırayla çalarsa
 // çalsın uyumlu kalması için pentatonik bir dizi kullanılıyor.
@@ -7,13 +11,12 @@ const HOVER_DEBOUNCE_MS = 120
 
 let started = false
 let startingPromise = null
-let reverb = null
 let hoverSynth = null
-let ambientOscillators = []
 let lastHoverAt = 0
+let mutedPref = false // Tone yüklenmeden önce gelen sessize alma isteği
 
 function buildGraph() {
-  reverb = new Tone.Reverb({ decay: 6, wet: 0.4 }).toDestination()
+  const reverb = new Tone.Reverb({ decay: 6, wet: 0.4 }).toDestination()
 
   // Ambiyans: iki hafif detune edilmiş sine oscillator, lowpass filtre —
   // duyulur duyulmaz, çok kısık, geniş bir alan hissi.
@@ -22,7 +25,8 @@ function buildGraph() {
   const osc2 = new Tone.Oscillator(55.3, 'sine').connect(ambientFilter)
   osc1.volume.value = -34
   osc2.volume.value = -34
-  ambientOscillators = [osc1, osc2]
+  osc1.start()
+  osc2.start()
 
   // Hover tonu: kısa, tek nota.
   hoverSynth = new Tone.Synth({
@@ -33,17 +37,34 @@ function buildGraph() {
 }
 
 // Tarayıcı kuralı: ses bağlamı ancak bir kullanıcı hareketinden sonra
-// başlatılabilir. İlk tıklama/dokunmada bir kez çağrılır; o ana kadar hiç
-// ses çalmaz. Ardışık çağrılar aynı promise'i paylaşır (tekrar kurulmaz).
+// başlatılabilir. Bu fonksiyon hareketin olay yöneticisinden çağrılmalı.
+// Ardışık çağrılar aynı promise'i paylaşır. Başarılıysa true, başlatılamazsa
+// false ile çözülür (reddedilmez); başarısızlıkta sonraki çağrı yeniden dener.
 export function ensureAudioStarted() {
-  if (started) return Promise.resolve()
+  if (started) return Promise.resolve(true)
   if (startingPromise) return startingPromise
 
-  startingPromise = Tone.start().then(() => {
-    buildGraph()
-    ambientOscillators.forEach((osc) => osc.start())
-    started = true
-  })
+  // Yerel bağlam hareketin içinde senkron olarak oluşturulup başlatılır. Tone
+  // dinamik olarak yüklenirken hareket penceresi kapansa bile (özellikle iOS
+  // Safari'de) bağlam açık kalır; Tone yüklenince bu bağlamı kullanır.
+  const AudioCtx = window.AudioContext || window.webkitAudioContext
+  const ctx = AudioCtx ? new AudioCtx() : null
+  ctx?.resume().catch(() => {})
+
+  startingPromise = import('tone')
+    .then(async (mod) => {
+      Tone = mod
+      if (ctx) Tone.setContext(ctx)
+      await Tone.start()
+      buildGraph()
+      Tone.getDestination().mute = mutedPref
+      started = true
+      return true
+    })
+    .catch(() => {
+      startingPromise = null
+      return false
+    })
   return startingPromise
 }
 
@@ -63,5 +84,6 @@ export function playHoverTone(depth) {
 }
 
 export function setMuted(muted) {
-  Tone.Destination.mute = muted
+  mutedPref = muted
+  if (Tone) Tone.getDestination().mute = muted
 }

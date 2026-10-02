@@ -45,11 +45,14 @@ export default function App() {
   // Ses bağlamı ancak bir kullanıcı hareketinden sonra başlatılabilir.
   // Kullanıcı sesi daha önce kapatmadıysa ilk tıklama/dokunmada bir kez
   // başlatılır; kapattıysa ses butonuna basılana kadar hiç başlatılmaz.
+  // Başlatma başarısız olursa dinleyici yerinde kalır, sonraki dokunuşta
+  // yeniden dener; başarılı olunca efekt temizliği dinleyiciyi kaldırır.
   useEffect(() => {
     if (muted || audioStarted) return
     const onFirstInteraction = () => {
-      window.removeEventListener('pointerdown', onFirstInteraction)
-      ensureAudioStarted().then(() => setAudioStarted(true))
+      ensureAudioStarted().then((ok) => {
+        if (ok) setAudioStarted(true)
+      })
     }
     window.addEventListener('pointerdown', onFirstInteraction)
     return () => window.removeEventListener('pointerdown', onFirstInteraction)
@@ -60,9 +63,9 @@ export default function App() {
       // "SESİ AÇ": bağlamı başlat ve (önceden kapatılmış olsa bile) sesi aç.
       setMutedState(false)
       storeMuted(false)
-      ensureAudioStarted().then(() => {
-        setMuted(false)
-        setAudioStarted(true)
+      setMuted(false)
+      ensureAudioStarted().then((ok) => {
+        if (ok) setAudioStarted(true)
       })
       return
     }
