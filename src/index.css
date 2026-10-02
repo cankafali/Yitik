@@ -14,6 +14,20 @@ html, body, #root {
   padding: 0;
 }
 
+html {
+  /* Çift dokunma yakınlaştırmasını kapatır (kelimeden kelimeye hızlı
+     dokunurken sayfa büyümesin); iki parmakla yakınlaştırma açık kalır. */
+  touch-action: manipulation;
+  /* Aşağı çekince sayfa yenilenmesin / esnemesin. */
+  overscroll-behavior: none;
+}
+
+/* Dokunmatik ekranlarda dokunulan öğede beliren gri vurguyu kaldır. */
+[role="button"],
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
 body {
   background-color: var(--color-bg);
   color: var(--color-word);

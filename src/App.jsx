@@ -79,7 +79,12 @@ export default function App() {
   // konum/ölçek animasyonlarını atlar, yalnızca opaklık geçişlerini korur.
   return (
     <MotionConfig reducedMotion="user">
-      <div className="relative w-screen h-screen overflow-hidden bg-bg">
+      {/*
+        h-screen (100vh) mobilde adres çubuğu gizliyken ölçülen yüksekliktir;
+        çubuk görünürken alt kenardaki ses butonu ve panel çubuğun altında
+        kalır. fixed + inset-0 her zaman görünen alanı kaplar.
+      */}
+      <div className="fixed inset-0 overflow-hidden bg-bg">
         <WordField
           phase={phase}
           onSelect={(w) => { setSelected(w); setTouched(true) }}
