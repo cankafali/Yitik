@@ -35,6 +35,7 @@ Uygulama `http://localhost:5173` adresinde açılır.
 | `npm run build` | Üretim derlemesi (`dist/`) |
 | `npm run preview` | Derlemeyi yerelde önizleme |
 | `npm run lint` | Oxlint ile kod denetimi |
+| `npm run check:words` | Kelime verisini denetler (tekrar, kategori, tanım) |
 
 ## Proje yapısı
 
@@ -46,4 +47,4 @@ src/
   App.jsx       Uygulama akışı
 ```
 
-Düşüş fiziğinin ayarları (yerçekimi, hava direnci, salınım vb.) `src/components/WordField.jsx` dosyasının başında isimli sabitler olarak durur. Yeni kelime eklemek için `src/data/words.js` dosyasına aynı biçimde bir satır eklemek yeterli.
+Düşüş fiziğinin ayarları (yerçekimi, hava direnci, salınım vb.) `src/components/WordField.jsx` dosyasının başında isimli sabitler olarak durur. Yeni kelime eklemek için `src/data/words.js` dosyasına aynı biçimde bir satır ekleyip `npm run check:words` çalıştırmak yeterli.
