@@ -12,7 +12,12 @@ import { playHoverTone } from '../audio/soundEngine'
 // Yerleşim
 const LANE_COUNT = 14
 const LANE_JITTER = 0.03 // şerit merkezinden ± sapma (genişliğin kesri)
-const MIN_LANE_GAP = 0.3 // aynı şeritteki kelimeler arası min. başlangıç mesafesi (yüksekliğin kesri)
+const PLACEMENT_CANDIDATES = 16 // açılışta her kelime için denenen rastgele konum sayısı
+const H_MARGIN_PX = 12 // yatay kesişme kontrolünde kelimeler arası pay (px)
+// Alttan çıkan kelimenin ekran dışında bekleme süresi, kendi düşüş süresinin
+// (ekran yüksekliği / hız) 0 ile bu kat arasında rastgele bir oranı. Ortalama
+// 0,6 → kelimelerin ~%60'ı aynı anda ekranda, açılıştaki yoğunlukla aynı.
+const RESPAWN_IDLE = 1.2
 const MOBILE_BREAKPOINT = 768 // px; bu genişliğin altı mobil düzen
 const RESIZE_DEBOUNCE_MS = 150
 const RELAYOUT_FADE_MS = 400 // mobil ↔ masaüstü geçişinde alanın sönüp yeniden kurulma süresi
@@ -33,6 +38,17 @@ const SWAY_FREQ_MAX = 0.45
 const SWAY_LIFT = 0.55 // dönüş noktalarında dikey hızın düşme oranı (0 = etkisiz, 1 = durur)
 const ROT_AMP_MIN = 3 // yatay hareket yönüne bağlı eğilme (derece)
 const ROT_AMP_MAX = 8
+
+// Kelimeler arası kaçınma: dikeyde yaklaşan ve yatayda kesişen kelimeler
+// değmeden önce birbirinden yana açılır, geçtikten sonra şeritlerine döner.
+const AVOID_LOOKAHEAD_PX = 30 // dikeyde ne kadar önceden açılmaya başlanacağı
+const AVOID_GAP_PX = 10 // açıldıktan sonra kalacak yatay boşluk
+const AVOID_RESPONSE = 4 // kesişmenin saniyede giderilme hızı (1/s); küçük = daha yumuşak
+const AVOID_RETURN = 0.6 // açılan kelimenin şeridine geri dönme hızı (1/s)
+const AVOID_ITERATIONS = 2 // kalabalıkta çözücünün kare başına tur sayısı
+const AVOID_MAX = 0.2 // en fazla yana açılma (genişliğin kesri)
+const AVOID_MAX_SPEED = 90 // yana açılmanın en yüksek hızı (px/s)
+const PLACEMENT_HORIZON_S = 6 // yerleşimde "yakalama" öngörüsünün süresi (s)
 
 // İmleç itmesi — vmin (= min(genişlik, yükseklik)) cinsinden
 const PUSH_RADIUS = 0.26
@@ -124,43 +140,6 @@ function pickTieredSize(sizeMin, sizeMax) {
   return rand(mediumEnd, sizeMax)
 }
 
-// Kelimeleri dikey şeritlere, sırayla ve karıştırılmış biçimde dağıtır —
-// böylece şeritler arasında kaba bir denge kalır ama sıralama öngörülebilir olmaz.
-function assignLanesShuffled(count, laneCount) {
-  const lanes = []
-  for (let i = 0; i < count; i++) lanes.push(i % laneCount)
-  for (let i = lanes.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[lanes[i], lanes[j]] = [lanes[j], lanes[i]]
-  }
-  return lanes
-}
-
-// Aynı şeride düşen kelimelerin başlangıç y'lerini -1 ile +1 (ekran
-// yüksekliği cinsinden) arasına yayar ve aralarında en az minGap bırakır.
-function computeInitialYs(laneAssignment, laneCount, minGap) {
-  const byLane = Array.from({ length: laneCount }, () => [])
-  laneAssignment.forEach((lane, idx) => byLane[lane].push(idx))
-
-  const ys = new Array(laneAssignment.length)
-  byLane.forEach((indices) => {
-    if (indices.length === 0) return
-    const localYs = indices.map(() => rand(-1, 1))
-    const order = indices.map((_, k) => k).sort((a, b) => localYs[a] - localYs[b])
-    for (let k = 1; k < order.length; k++) {
-      const prev = order[k - 1]
-      const curr = order[k]
-      if (localYs[curr] - localYs[prev] < minGap) {
-        localYs[curr] = localYs[prev] + minGap
-      }
-    }
-    indices.forEach((idx, k) => {
-      ys[idx] = localYs[k]
-    })
-  })
-  return ys
-}
-
 // Şerit merkezi + küçük bir jitter (genişliğin kesri olarak). Ekran kenarından
 // taşmayı önleyen kırpma, güncel kelime genişliğiyle her karede yapılır.
 function laneToX(lane) {
@@ -185,7 +164,14 @@ function computeBaseBlur(size, isMobile) {
   return size < BLUR_THRESHOLD ? ((BLUR_THRESHOLD - size) / 16) * MAX_BLUR : 0
 }
 
-function createWordState(word, sizeMin, sizeMax, lane, initialY, isMobile) {
+// Bodoni Moda'nın ortalama glif genişliğiyle kaba genişlik tahmini (px);
+// gerçek ölçüm gelene kadar kullanılır.
+function estimateWidth(text, size) {
+  return text.length * size * 0.58
+}
+
+// Konum (x, y) yerleştirme sırasında atanır; burada geçici değerler.
+function createWordState(word, sizeMin, sizeMax, isMobile) {
   const size = pickTieredSize(sizeMin, sizeMax)
   // 0 = en küçük/uzak, 1 = en büyük/yakın
   const depth = (size - sizeMin) / (sizeMax - sizeMin)
@@ -198,23 +184,25 @@ function createWordState(word, sizeMin, sizeMax, lane, initialY, isMobile) {
     entry: word, // { text, meaning, origin, category } — seçimde panele gider
     size,
     depth,
-    lane,
-    x: laneToX(lane),
-    y: initialY,
-    // Açılışta ekranın içinde duranlar zaten terminal hızda; üstte bekleyenler
-    // yavaş başlayıp hızlanır.
-    vFall: initialY > 0 ? terminal : terminal * ENTRY_SPEED,
+    x: 0,
+    y: 0,
+    vFall: terminal,
     terminal,
     swayAmp: rand(SWAY_AMP_MIN, SWAY_AMP_MAX),
     swayFreq: rand(SWAY_FREQ_MIN, SWAY_FREQ_MAX),
     swayPhase: rand(0, TAU),
     rotAmp: rand(ROT_AMP_MIN, ROT_AMP_MAX),
-    // Ölçüm mount/resize sonrası gerçek değerlerle güncellenir; o ana kadar
-    // Bodoni Moda'nın ortalama glif genişliğiyle kaba bir tahmin.
-    width: word.text.length * size * 0.58,
+    // Ölçüm mount/resize sonrası gerçek değerlerle güncellenir.
+    width: estimateWidth(word.text, size),
     height: size * 1.3,
     pushX: 0, // vmin cinsinden
     pushY: 0,
+    idle: 0, // > 0 iken ekran dışında bekler (s)
+    avoidX: 0, // komşulardan yana açılma ofseti (genişliğin kesri)
+    prevAvoidX: 0, // önceki karedeki değer (hız sınırı için)
+    baseLeft: 0, // karede hesaplanan kaçınmasız sol kenar (px)
+    curLeft: 0, // çözücünün çalışma kopyası (px)
+    rot: 0,
     frozen: false,
     // DOM'a en son yazılan değerler (-1 = bir sonraki karede mutlaka yaz)
     lastOpacity: -1,
@@ -236,32 +224,91 @@ function createWordState(word, sizeMin, sizeMax, lane, initialY, isMobile) {
   }
 }
 
-// En boş şeridi bul: her şeritteki en üstteki (en küçük y'li) kelimenin
-// y değerine bak, en aşağıda kalanı seç. Hiç kelimesi olmayan bir şerit
-// otomatik olarak en boş kabul edilir.
-function pickEmptiestLane(all, selfIndex) {
-  const laneMinY = new Array(LANE_COUNT).fill(Infinity)
-  all.forEach((other, j) => {
-    if (j === selfIndex) return
-    if (other.y < laneMinY[other.lane]) laneMinY[other.lane] = other.y
-  })
-  let bestLane = 0
-  let bestVal = -Infinity
-  for (let l = 0; l < LANE_COUNT; l++) {
-    if (laneMinY[l] > bestVal) {
-      bestVal = laneMinY[l]
-      bestLane = l
-    }
-  }
-  return bestLane
-}
-
 // Kelimenin ekrandaki sol kenarı (px): şerit konumu, ekran kenarından
 // (salınım payıyla birlikte) taşmayacak şekilde kırpılır.
 function baseLeftPx(w, vw) {
   const swayPx = w.swayAmp * vw
   const maxLeft = Math.max(swayPx, vw - w.width - swayPx)
   return clamp(w.x * vw, swayPx, maxLeft)
+}
+
+// Bir kelimenin (w) şu anki x/y'sinde ne kadar "rahat" olduğunu ölçer (px).
+// Yalnızca yatayda kesişen kelimelere bakılır (salınım payı dahil; şeritler
+// kelimelerden dar olduğu için komşu şeritler de kesişebilir). Her biri için
+// dikey boşluk, üstteki kelime alttakinden hızlıysa yakın gelecekte
+// (alttaki ekrandan çıkana kadar, en fazla PLACEMENT_HORIZON_S) kapanacağı
+// kadar azaltılır. Daha uzak geçişleri döngüdeki kaçınma halleder. Sonuç bu
+// öngörülen boşlukların en küçüğüdür; kesişen kelime yoksa Infinity.
+function clearance(w, others, vw, vh) {
+  const left = baseLeftPx(w, vw)
+  const sway = w.swayAmp * vw
+  const a0 = left - sway - H_MARGIN_PX
+  const a1 = left + w.width + sway + H_MARGIN_PX
+  let best = Infinity
+
+  for (let j = 0; j < others.length; j++) {
+    const o = others[j]
+    if (o === w || o.idle > 0) continue // ekran dışında bekleyenler sayılmaz
+    const oLeft = baseLeftPx(o, vw)
+    const oSway = o.swayAmp * vw
+    if (oLeft + o.width + oSway <= a0 || oLeft - oSway >= a1) continue
+
+    const [upper, lower] = w.y <= o.y ? [w, o] : [o, w]
+    let gap = lower.y * vh - (upper.y * vh + upper.height)
+    if (upper.terminal > lower.terminal) {
+      const exitTime = Math.min(Math.max(0, 1 - lower.y) / lower.terminal, PLACEMENT_HORIZON_S)
+      gap -= (upper.terminal - lower.terminal) * vh * exitTime
+    }
+    if (gap < best) best = gap
+  }
+  return best
+}
+
+// Açılış yerleşimi: kelimeler sırayla, her biri için birkaç rastgele aday
+// konum (şerit + yükseklik) denenerek en rahat olanına yerleştirilir.
+function placeInitial(all, vw, vh) {
+  const placed = []
+  all.forEach((w) => {
+    let bestX = 0
+    let bestY = 0
+    let bestScore = -Infinity
+    for (let k = 0; k < PLACEMENT_CANDIDATES; k++) {
+      w.x = laneToX(Math.floor(Math.random() * LANE_COUNT))
+      w.y = rand(-1, 1)
+      const score = clearance(w, placed, vw, vh)
+      if (score > bestScore) {
+        bestScore = score
+        bestX = w.x
+        bestY = w.y
+      }
+    }
+    w.x = bestX
+    w.y = bestY
+    // Ekranın içinde başlayanlar zaten terminal hızda; üstte bekleyenler
+    // yavaş başlayıp hızlanır.
+    w.vFall = w.y > 0 ? w.terminal : w.terminal * ENTRY_SPEED
+    placed.push(w)
+  })
+}
+
+// Yeniden doğuş: kelime ekranın hemen üstünde, şeritlerin en rahat
+// olanından girer. Eşit derecede rahat şeritler (ör. hiç kesişen yok)
+// arasından rastgele seçilir ki hep aynı şerit seçilmesin.
+function placeAtTop(w, all, vw, vh) {
+  w.y = -(w.height + 40) / vh
+  let bestScore = -Infinity
+  let bestXs = []
+  for (let lane = 0; lane < LANE_COUNT; lane++) {
+    w.x = laneToX(lane)
+    const score = clearance(w, all, vw, vh)
+    if (score > bestScore) {
+      bestScore = score
+      bestXs = [w.x]
+    } else if (score === bestScore) {
+      bestXs.push(w.x)
+    }
+  }
+  w.x = bestXs[Math.floor(Math.random() * bestXs.length)]
 }
 
 function Field({ onSelect, onClear, phase, isMobile }) {
@@ -279,12 +326,8 @@ function Field({ onSelect, onClear, phase, isMobile }) {
   /* oxlint-disable react/refs */
   if (state.current === null) {
     viewport.current = readViewport()
-    const laneAssignment = assignLanesShuffled(selectedWords.length, LANE_COUNT)
-    const initialYs = computeInitialYs(laneAssignment, LANE_COUNT, MIN_LANE_GAP)
-
-    state.current = selectedWords.map((w, i) =>
-      createWordState(w, sizeMin, sizeMax, laneAssignment[i], initialYs[i], isMobile)
-    )
+    state.current = selectedWords.map((w) => createWordState(w, sizeMin, sizeMax, isMobile))
+    placeInitial(state.current, viewport.current.vw, viewport.current.vh)
   }
   /* oxlint-enable react/refs */
 
@@ -395,12 +438,32 @@ function Field({ onSelect, onClear, phase, isMobile }) {
       const reduced = reducedMotion.current
       const all = state.current
 
+      const avoidEase = 1 - Math.exp(-AVOID_RESPONSE * dt)
+      const avoidReturn = 1 - Math.exp(-AVOID_RETURN * dt)
+
+      // 1. geçiş — fizik: düşüş, salınım, yeniden doğuş. Kaçınmasız taban
+      // konum (w.baseLeft) ve eğilme (w.rot) sonraki geçişler için saklanır.
       for (let i = 0; i < all.length; i++) {
         const w = all[i]
         // Dondurulmuş kelime tamamen atlanır; salınım fazı da ilerlemediği
-        // için çözüldüğünde kaldığı yerden sıçramadan devam eder.
+        // için çözüldüğünde kaldığı yerden sıçramadan devam eder. Son taban
+        // konumu kalır, diğer kelimeler ondan kaçınmaya devam eder.
         if (w.frozen) continue
         const el = refs.current[i]
+
+        // Ekran dışında bekleyen kelime: süre dolunca o anki duruma göre en
+        // rahat şeritte, ekranın hemen üstünden yavaşça girer.
+        if (w.idle > 0) {
+          w.idle -= dt
+          if (w.idle > 0) {
+            w.baseLeft = baseLeftPx(w, vw)
+            continue
+          }
+          placeAtTop(w, all, vw, vh)
+          w.vFall = w.terminal * ENTRY_SPEED
+          w.avoidX = 0
+          w.prevAvoidX = 0
+        }
 
         // Yerçekimi + hava direnci → terminal hıza yaklaşma
         w.vFall += DRAG * (w.terminal - w.vFall) * dt
@@ -414,30 +477,105 @@ function Field({ onSelect, onClear, phase, isMobile }) {
         w.y += w.vFall * lift * dt
 
         if (w.y * vh > vh + 20) {
-          w.lane = pickEmptiestLane(all, i)
-          w.x = laneToX(w.lane)
-          w.y = -(w.height + 40) / vh
-          w.vFall = w.terminal * ENTRY_SPEED
-
           // Aynı kelime geri dönmesin: havuzdan ekranda olmayan yeni bir
           // kelimeyle yeniden doğ. Metin DOM'a doğrudan yazılır (re-render
           // yok); React bir sonraki render'da aynı metni state'ten okur.
+          // Yeni metnin genişliği yerleşimden önce tahmin edilir, gerçek
+          // ölçüm bir sonraki karede gelir.
           const next = pickReplacementWord(all)
           if (next) {
             w.text = next.text
             w.entry = next
+            w.width = estimateWidth(next.text, w.size)
             const inner = el && el.firstChild
             if (inner) inner.textContent = next.text
             if (pendingMeasure.length === 0) requestAnimationFrame(measurePending)
             pendingMeasure.push(i)
           }
+
+          // Hemen değil, rastgele bir süre ekran dışında bekledikten sonra
+          // girer. Aksi halde zamanla bütün kelimeler aynı anda ekranda
+          // birikir (açılışta ~25 iken bir dakikada ~45) ve üst üste biner.
+          // Süre kelimenin kendi düşüş süresiyle orantılı ki yoğunluk açılıştaki
+          // seviyede kalsın.
+          w.y = -(w.height + 40) / vh
+          w.idle =
+            rand(0, RESPAWN_IDLE) / (w.terminal * (reduced ? REDUCED_MOTION_SPEED : 1))
+          w.baseLeft = baseLeftPx(w, vw)
+          continue
         }
 
-        const swayPx = reduced ? 0 : w.swayAmp * vw * s
         // Eğilme yatay hıza bağlı: sola kayarken (cos < 0) sola yatar.
-        const rot = reduced ? 0 : w.rotAmp * c
-        const leftPx = baseLeftPx(w, vw) + swayPx
+        w.rot = reduced ? 0 : w.rotAmp * c
+        w.baseLeft = baseLeftPx(w, vw) + (reduced ? 0 : w.swayAmp * vw * s)
+      }
+
+      // 2. geçiş — kaçınma (konum kısıtı çözücüsü): önce her kelimeyi yay
+      // gibi şeridine biraz geri çek, sonra şu anki konumlarda dikeyde
+      // yaklaşan (ön görüş payıyla) ve yatayda kesişen her çifti kesişmenin
+      // bir kısmı kadar ayır. Kalabalıkta zıt itmeler birbirini götürmesin
+      // diye konumlar her düzeltmeden sonra güncellenir ve iki tur dönülür.
+      for (let i = 0; i < all.length; i++) {
+        const w = all[i]
+        if (!w.frozen) w.avoidX *= 1 - avoidReturn
+        w.curLeft = clamp(w.baseLeft + w.avoidX * vw, 0, Math.max(0, vw - w.width))
+      }
+      for (let iter = 0; iter < AVOID_ITERATIONS; iter++) {
+        for (let i = 0; i < all.length; i++) {
+          const a = all[i]
+          const aTop = a.y * vh
+          if (a.idle > 0 || aTop > vh || aTop + a.height < -AVOID_LOOKAHEAD_PX) continue
+          for (let j = i + 1; j < all.length; j++) {
+            const b = all[j]
+            if (b.idle > 0 || (a.frozen && b.frozen)) continue
+            const bTop = b.y * vh
+            const overlapY =
+              Math.min(aTop + a.height, bTop + b.height) - Math.max(aTop, bTop) + AVOID_LOOKAHEAD_PX
+            if (overlapY <= 0) continue
+            const overlapX =
+              Math.min(a.curLeft + a.width, b.curLeft + b.width) -
+              Math.max(a.curLeft, b.curLeft) +
+              AVOID_GAP_PX
+            if (overlapX <= 0) continue
+
+            // Merkezi solda olan sola, sağda olan sağa açılır (dir: a'nın yönü).
+            const dir = a.curLeft + a.width / 2 <= b.curLeft + b.width / 2 ? -1 : 1
+            const corr = overlapX * avoidEase
+            // Her birinin o yönde ne kadar yeri var: donmuş kelime hiç kıpırdamaz,
+            // ekran kenarına dayanan da kenarı geçemez. Birinin yetmeyen payını
+            // diğeri üstlenir.
+            const roomA = a.frozen ? 0 : dir < 0 ? a.curLeft : vw - a.width - a.curLeft
+            const roomB = b.frozen ? 0 : dir < 0 ? vw - b.width - b.curLeft : b.curLeft
+            let moveA = Math.min(corr / 2, roomA)
+            const moveB = Math.min(corr - moveA, roomB)
+            moveA = Math.min(corr - moveB, roomA)
+
+            a.curLeft += dir * moveA
+            b.curLeft -= dir * moveB
+            a.avoidX += (dir * moveA) / vw
+            b.avoidX -= (dir * moveB) / vw
+          }
+        }
+      }
+
+      // 3. geçiş — itme ve DOM yazımı.
+      for (let i = 0; i < all.length; i++) {
+        const w = all[i]
+        if (w.frozen) continue
+        const el = refs.current[i]
+
+        // Açılma hızını sınırla: yeni bir kesişme görüldüğünde kelime yana
+        // seğirmesin, salınımla aynı yumuşaklıkta kaysın.
+        const maxStep = (AVOID_MAX_SPEED * dt) / vw
+        w.avoidX = clamp(
+          clamp(w.avoidX, w.prevAvoidX - maxStep, w.prevAvoidX + maxStep),
+          -AVOID_MAX,
+          AVOID_MAX
+        )
+        w.prevAvoidX = w.avoidX
+        const leftPx = clamp(w.baseLeft + w.avoidX * vw, 0, Math.max(0, vw - w.width))
         const topPx = w.y * vh
+        const rot = w.rot
 
         // Ekrana girip çıktıkça Tab sırasına ekle/çıkar (yalnızca değişince yaz).
         const tabbable = topPx > -w.height && topPx < vh
